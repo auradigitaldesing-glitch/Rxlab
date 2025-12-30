@@ -1,10 +1,90 @@
 // Vercel Serverless Function para Brevo API
 // Esta función recibe datos del formulario y los envía a Brevo CRM
 
+// Función auxiliar para manejar respuesta de Brevo
+async function handleBrevoResponse(response, email, name, phone, company, message) {
+  console.log(`📨 Respuesta de Brevo - Status: ${response.status}`);
+
+  // Si Brevo responde 204 (No Content), es éxito - no hay body que leer
+  if (response.status === 204) {
+    console.log('✅ Brevo respondió 204 (No Content) → ÉXITO');
+    return {
+      ok: true,
+      status: 204,
+      success: true,
+      message: 'Contacto creado o actualizado correctamente en Brevo'
+    };
+  }
+
+  // Si status es 200 o 201, leer JSON normalmente
+  if (response.status === 200 || response.status === 201) {
+    const contentType = response.headers.get('content-type');
+    if (contentType && contentType.includes('application/json')) {
+      try {
+        const responseText = await response.text();
+        if (responseText) {
+          const result = JSON.parse(responseText);
+          console.log('✅ Brevo respondió con JSON → ÉXITO');
+          return {
+            ok: true,
+            success: true,
+            message: 'Contacto creado exitosamente'
+          };
+        }
+      } catch (parseError) {
+        console.error('❌ Error al parsear JSON de Brevo:', parseError);
+        // Aún así es éxito si el status es 200/201
+        return {
+          ok: true,
+          success: true,
+          message: 'Contacto procesado correctamente en Brevo'
+        };
+      }
+    } else {
+      // Status 200/201 pero sin JSON también es éxito
+      console.log('✅ Brevo respondió con status 200/201 (sin JSON) → ÉXITO');
+      return {
+        ok: true,
+        success: true,
+        message: 'Contacto creado exitosamente'
+      };
+    }
+  }
+
+  // Si hay error, intentar leer JSON del error
+  const contentType = response.headers.get('content-type');
+  let errorResult = null;
+  
+  if (contentType && contentType.includes('application/json')) {
+    try {
+      const responseText = await response.text();
+      if (responseText) {
+        errorResult = JSON.parse(responseText);
+      }
+    } catch (parseError) {
+      console.error('❌ Error al parsear JSON de error de Brevo:', parseError);
+      return {
+        ok: false,
+        status: response.status,
+        code: null,
+        message: 'Error al procesar respuesta de Brevo'
+      };
+    }
+  }
+
+  return {
+    ok: false,
+    status: response.status,
+    code: errorResult?.code || null,
+    message: errorResult?.message || 'Error desconocido',
+    errorResult
+  };
+}
+
 export default async function handler(req, res) {
   // Solo permitir métodos POST
   if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Método no permitido' });
+    return res.status(405).json({ ok: false, error: 'Método no permitido' });
   }
 
   try {
@@ -30,25 +110,25 @@ export default async function handler(req, res) {
     // Validaciones básicas
     if (!name || name.length < 2) {
       console.error('❌ Validación fallida: nombre inválido');
-      return res.status(400).json({ error: 'El nombre es requerido y debe tener al menos 2 caracteres' });
+      return res.status(400).json({ ok: false, error: 'El nombre es requerido y debe tener al menos 2 caracteres' });
     }
 
     if (!email) {
       console.error('❌ Validación fallida: email vacío');
-      return res.status(400).json({ error: 'El email es requerido' });
+      return res.status(400).json({ ok: false, error: 'El email es requerido' });
     }
 
     // Validar formato de email
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
       console.error('❌ Validación fallida: formato de email inválido');
-      return res.status(400).json({ error: 'El formato del email no es válido' });
+      return res.status(400).json({ ok: false, error: 'El formato del email no es válido' });
     }
 
     // Validar teléfono si se proporciona
     if (phone && phone.length < 7) {
       console.error('❌ Validación fallida: teléfono muy corto');
-      return res.status(400).json({ error: 'El teléfono debe tener al menos 7 caracteres' });
+      return res.status(400).json({ ok: false, error: 'El teléfono debe tener al menos 7 caracteres' });
     }
 
     // Obtener variables de entorno
@@ -58,7 +138,7 @@ export default async function handler(req, res) {
     // Validar que la API key esté configurada
     if (!BREVO_API_KEY) {
       console.error('❌ BREVO_API_KEY no está configurada en las variables de entorno');
-      return res.status(500).json({ error: 'Error de configuración del servidor' });
+      return res.status(500).json({ ok: false, error: 'Error de configuración del servidor' });
     }
 
     // Preparar datos para Brevo con atributos reales
@@ -111,180 +191,163 @@ export default async function handler(req, res) {
     });
 
     // Manejar respuesta de Brevo
-    let brevoResult;
-    const contentType = brevoResponse.headers.get('content-type');
-    const responseText = await brevoResponse.text();
+    const brevoResult = await handleBrevoResponse(brevoResponse, email, name, phone, company, message);
 
-    console.log(`📨 Respuesta de Brevo - Status: ${brevoResponse.status}`);
-
-    if (contentType && contentType.includes('application/json')) {
-      try {
-        brevoResult = JSON.parse(responseText);
-      } catch (parseError) {
-        console.error('❌ Error al parsear JSON de Brevo:', parseError);
-        return res.status(500).json({ error: 'Error al procesar respuesta de Brevo' });
-      }
-    } else {
-      console.error('❌ Brevo devolvió respuesta no-JSON:', responseText.substring(0, 200));
-      return res.status(500).json({
-        error: `Error de comunicación con Brevo (status: ${brevoResponse.status})`
+    // Si es éxito, retornar inmediatamente
+    if (brevoResult.ok) {
+      return res.status(200).json({
+        ...brevoResult,
+        data: { email, name, phone, company, message }
       });
     }
 
     // Si hay error, verificar el tipo
-    if (!brevoResponse.ok) {
-      const errorMessage = brevoResult.message || 'Error desconocido';
-      const errorCode = brevoResult.code;
+    const errorMessage = brevoResult.message || 'Error desconocido';
+    const errorCode = brevoResult.code;
 
-      console.error('❌ Error de Brevo API:', {
-        status: brevoResponse.status,
-        code: errorCode,
-        message: errorMessage
-      });
+    console.error('❌ Error de Brevo API:', {
+      status: brevoResponse.status,
+      code: errorCode,
+      message: errorMessage
+    });
 
-      // Si es un error de contacto duplicado (email o teléfono), intentar actualizar
-      if (brevoResponse.status === 400) {
-        // Caso 1: Email duplicado - intentar actualizar con PUT
-        if (errorCode === 'duplicate_parameter' && 
-            (errorMessage.toLowerCase().includes('email') || 
-             errorMessage.toLowerCase().includes('contact') && !errorMessage.toLowerCase().includes('sms'))) {
-          console.log('🔄 Contacto duplicado detectado (email), intentando actualizar...');
-          
-          try {
-            const updateResponse = await fetch(`https://api.brevo.com/v3/contacts/${encodeURIComponent(email)}`, {
-              method: 'PUT',
-              headers: {
-                'accept': 'application/json',
-                'api-key': BREVO_API_KEY,
-                'content-type': 'application/json'
-              },
-              body: JSON.stringify(contactData)
-            });
-
-            if (updateResponse.ok) {
-              console.log('✅ Contacto actualizado exitosamente');
-              return res.status(200).json({
-                success: true,
-                message: 'Contacto actualizado exitosamente',
-                data: { email, name, phone, company, message }
-              });
-            } else {
-              const updateErrorText = await updateResponse.text();
-              console.error('❌ Error al actualizar contacto:', updateResponse.status, updateErrorText.substring(0, 200));
-              // Continuar con el error original
-            }
-          } catch (updateError) {
-            console.error('❌ Error al intentar actualizar:', updateError);
-            // Continuar con el error original
-          }
-        }
-
-        // Caso 2: Teléfono (SMS) duplicado - guardar en PHONE_BACKUP
-        const isSMSDuplicate = errorCode === 'duplicate_parameter' && 
-                               (errorMessage.includes('SMS') || 
-                                errorMessage.includes('phone') || 
-                                errorMessage.includes('teléfono') ||
-                                errorMessage.includes('mobile'));
+    // Si es un error de contacto duplicado (email o teléfono), intentar actualizar
+    if (brevoResponse.status === 400) {
+      // Caso 1: Email duplicado - intentar actualizar con PUT
+      if (errorCode === 'duplicate_parameter' && 
+          (errorMessage.toLowerCase().includes('email') || 
+           (errorMessage.toLowerCase().includes('contact') && !errorMessage.toLowerCase().includes('sms')))) {
+        console.log('🔄 Contacto duplicado detectado (email), intentando actualizar...');
         
-        if (isSMSDuplicate && phoneFormatted) {
-          console.log('⚠️ SMS duplicado, teléfono guardado como PHONE_BACKUP');
-          
-          // Crear contacto sin SMS pero con PHONE_BACKUP
-          const contactDataWithBackup = {
-            email: email,
-            attributes: {
-              NOMBRE: NOMBRE,
-              APELLIDOS: APELLIDOS,
-              PHONE_BACKUP: phoneFormatted
+        try {
+          const updateResponse = await fetch(`https://api.brevo.com/v3/contacts/${encodeURIComponent(email)}`, {
+            method: 'PUT',
+            headers: {
+              'accept': 'application/json',
+              'api-key': BREVO_API_KEY,
+              'content-type': 'application/json'
             },
-            listIds: [BREVO_LIST_ID],
-            updateEnabled: true
-          };
-
-          // Agregar empresa si existe
-          if (company) {
-            contactDataWithBackup.attributes.EMPRESA = company;
-          }
-
-          console.log('📤 Payload con PHONE_BACKUP:', {
-            email: contactDataWithBackup.email,
-            attributes: Object.keys(contactDataWithBackup.attributes),
-            listIds: contactDataWithBackup.listIds
+            body: JSON.stringify(contactData)
           });
 
-          try {
-            // Intentar crear contacto con PHONE_BACKUP
-            const retryResponse = await fetch('https://api.brevo.com/v3/contacts', {
-              method: 'POST',
-              headers: {
-                'accept': 'application/json',
-                'api-key': BREVO_API_KEY,
-                'content-type': 'application/json'
-              },
-              body: JSON.stringify(contactDataWithBackup)
+          const updateResult = await handleBrevoResponse(updateResponse, email, name, phone, company, message);
+          
+          if (updateResult.ok) {
+            return res.status(200).json({
+              ...updateResult,
+              data: { email, name, phone, company, message }
             });
-
-            if (retryResponse.ok) {
-              console.log('✅ Contacto creado con PHONE_BACKUP');
-              return res.status(200).json({
-                success: true,
-                message: 'Contacto creado exitosamente (teléfono guardado como respaldo)',
-                data: { email, name, phone, company, message }
-              });
-            } else {
-              // Si falla, intentar actualizar el contacto existente con PUT
-              try {
-                const updateResponse = await fetch(`https://api.brevo.com/v3/contacts/${encodeURIComponent(email)}`, {
-                  method: 'PUT',
-                  headers: {
-                    'accept': 'application/json',
-                    'api-key': BREVO_API_KEY,
-                    'content-type': 'application/json'
-                  },
-                  body: JSON.stringify(contactDataWithBackup)
-                });
-
-                if (updateResponse.ok) {
-                  console.log('✅ Contacto actualizado con PHONE_BACKUP');
-                  return res.status(200).json({
-                    success: true,
-                    message: 'Contacto actualizado exitosamente (teléfono guardado como respaldo)',
-                    data: { email, name, phone, company, message }
-                  });
-                } else {
-                  const updateErrorText = await updateResponse.text();
-                  console.error('❌ Error al actualizar con PHONE_BACKUP:', updateResponse.status, updateErrorText.substring(0, 200));
-                }
-              } catch (updateError) {
-                console.error('❌ Error al intentar actualizar con PHONE_BACKUP:', updateError);
-              }
-              
-              const retryErrorText = await retryResponse.text();
-              console.error('❌ Error al reintentar con PHONE_BACKUP:', retryResponse.status, retryErrorText.substring(0, 200));
-            }
-          } catch (retryError) {
-            console.error('❌ Error al reintentar con PHONE_BACKUP:', retryError);
+          } else {
+            console.error('❌ Error al actualizar contacto:', updateResponse.status);
+            // Continuar con el error original
           }
+        } catch (updateError) {
+          console.error('❌ Error al intentar actualizar:', updateError);
+          // Continuar con el error original
         }
       }
 
-      // Si llegamos aquí, hubo un error que no pudimos manejar
-      return res.status(500).json({
-        error: errorMessage || 'Error al procesar la solicitud con Brevo'
-      });
+      // Caso 2: Teléfono (SMS) duplicado - guardar en PHONE_BACKUP
+      const isSMSDuplicate = errorCode === 'duplicate_parameter' && 
+                             (errorMessage.includes('SMS') || 
+                              errorMessage.includes('phone') || 
+                              errorMessage.includes('teléfono') ||
+                              errorMessage.includes('mobile'));
+      
+      if (isSMSDuplicate && phoneFormatted) {
+        console.log('⚠️ SMS duplicado, teléfono guardado como PHONE_BACKUP');
+        
+        // Crear contacto sin SMS pero con PHONE_BACKUP
+        const contactDataWithBackup = {
+          email: email,
+          attributes: {
+            NOMBRE: NOMBRE,
+            APELLIDOS: APELLIDOS,
+            PHONE_BACKUP: phoneFormatted
+          },
+          listIds: [BREVO_LIST_ID],
+          updateEnabled: true
+        };
+
+        // Agregar empresa si existe
+        if (company) {
+          contactDataWithBackup.attributes.EMPRESA = company;
+        }
+
+        console.log('📤 Payload con PHONE_BACKUP:', {
+          email: contactDataWithBackup.email,
+          attributes: Object.keys(contactDataWithBackup.attributes),
+          listIds: contactDataWithBackup.listIds
+        });
+
+        try {
+          // Intentar crear contacto con PHONE_BACKUP
+          const retryResponse = await fetch('https://api.brevo.com/v3/contacts', {
+            method: 'POST',
+            headers: {
+              'accept': 'application/json',
+              'api-key': BREVO_API_KEY,
+              'content-type': 'application/json'
+            },
+            body: JSON.stringify(contactDataWithBackup)
+          });
+
+          const retryResult = await handleBrevoResponse(retryResponse, email, name, phone, company, message);
+          
+          if (retryResult.ok) {
+            return res.status(200).json({
+              ...retryResult,
+              message: 'Contacto creado exitosamente (teléfono guardado como respaldo)',
+              data: { email, name, phone, company, message }
+            });
+          } else {
+            // Si falla, intentar actualizar el contacto existente con PUT
+            try {
+              const updateResponse = await fetch(`https://api.brevo.com/v3/contacts/${encodeURIComponent(email)}`, {
+                method: 'PUT',
+                headers: {
+                  'accept': 'application/json',
+                  'api-key': BREVO_API_KEY,
+                  'content-type': 'application/json'
+                },
+                body: JSON.stringify(contactDataWithBackup)
+              });
+
+              const updateResult = await handleBrevoResponse(updateResponse, email, name, phone, company, message);
+              
+              if (updateResult.ok) {
+                return res.status(200).json({
+                  ...updateResult,
+                  message: 'Contacto actualizado exitosamente (teléfono guardado como respaldo)',
+                  data: { email, name, phone, company, message }
+                });
+              } else {
+                console.error('❌ Error al actualizar con PHONE_BACKUP:', updateResponse.status);
+              }
+            } catch (updateError) {
+              console.error('❌ Error al intentar actualizar con PHONE_BACKUP:', updateError);
+            }
+            
+            console.error('❌ Error al reintentar con PHONE_BACKUP:', retryResponse.status);
+          }
+        } catch (retryError) {
+          console.error('❌ Error al reintentar con PHONE_BACKUP:', retryError);
+        }
+      }
     }
 
-    // Éxito - contacto creado
-    console.log('✅ Contacto creado correctamente en Brevo');
-    return res.status(200).json({
-      success: true,
-      message: 'Contacto creado exitosamente',
-      data: { email, name, phone, company, message }
+    // Si llegamos aquí, hubo un error que no pudimos manejar
+    return res.status(500).json({
+      ok: false,
+      status: brevoResponse.status,
+      code: errorCode,
+      error: errorMessage || 'Error al procesar la solicitud con Brevo'
     });
 
   } catch (error) {
     console.error('❌ Error en handler:', error);
     return res.status(500).json({
+      ok: false,
       error: 'Error interno del servidor'
     });
   }

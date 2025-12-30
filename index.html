@@ -1202,11 +1202,16 @@
           try {
             result = await response.json();
           } catch (jsonError) {
-            // Si la respuesta no es JSON válido
-            throw new Error("Error de comunicación con el servidor");
+            // Si la respuesta no es JSON válido, pero el status es ok, considerar éxito
+            if (response.ok) {
+              result = { ok: true, success: true };
+            } else {
+              throw new Error("Error de comunicación con el servidor");
+            }
           }
 
-          if (response.ok && result.success) {
+          // Verificar si la respuesta indica éxito (ok: true o success: true)
+          if (response.ok && (result.ok === true || result.success === true)) {
             // Mostrar mensaje de éxito
             formMessage.style.display = "block";
             formMessage.style.background = "rgba(34, 197, 94, 0.15)";
@@ -1233,7 +1238,8 @@
 
           } else {
             // Mostrar el mensaje de error específico del servidor
-            const errorMessage = result.error || "Error al enviar el formulario";
+            // Solo mostrar error si ok === false explícitamente
+            const errorMessage = (result.ok === false && result.error) ? result.error : "Error al enviar el formulario";
             formMessage.style.display = "block";
             formMessage.style.background = "rgba(239, 68, 68, 0.15)";
             formMessage.style.border = "1px solid rgba(239, 68, 68, 0.35)";
