@@ -902,22 +902,8 @@
 
             <div class="form-field">
               <label for="telefono">Teléfono</label>
-              <div style="display: flex; gap: 0.5rem; align-items: stretch;">
-                <select id="lada" name="Lada" required style="width: 120px; flex-shrink: 0;">
-                  <option value="+52" selected>🇲🇽 +52</option>
-                  <option value="+1">🇺🇸 +1</option>
-                  <option value="+507">🇵🇦 +507</option>
-                  <option value="+56">🇨🇱 +56</option>
-                  <option value="+57">🇨🇴 +57</option>
-                  <option value="+34">🇪🇸 +34</option>
-                  <option value="+54">🇦🇷 +54</option>
-                  <option value="+51">🇵🇪 +51</option>
-                  <option value="+593">🇪🇨 +593</option>
-                  <option value="+58">🇻🇪 +58</option>
-                </select>
-                <input id="telefono" name="Telefono" type="tel" inputmode="tel" pattern="[0-9\s\-]{7,20}" placeholder="55 1234 5678" required style="flex: 1; min-width: 0;">
-              </div>
-              <small style="color:var(--text-muted);font-size:0.88em;">Selecciona tu código de país. Para México incluye tu lada local (ej: 55, 81, 33, etc.) en el número. Brevo requiere el formato internacional completo.</small>
+              <input id="telefono" name="Telefono" type="tel" inputmode="tel" pattern="[0-9\s\-]{7,20}" placeholder="+52 55 1234 5678" value="+52" required style="width: 100%;">
+              <small style="color:var(--text-muted);font-size:0.88em;">Ingresa tu número completo incluyendo la lada local (ej: +52 55 1234 5678). El código de país +52 ya está incluido.</small>
             </div>
 
             <div class="form-field">
@@ -1144,6 +1130,41 @@
       const form = document.getElementById("contact-brevo-form");
       if (!form) return;
 
+      // Manejar el campo de teléfono para mantener +52 como prefijo
+      const telefonoInput = document.getElementById("telefono");
+      if (telefonoInput) {
+        // Asegurar que siempre tenga +52 al inicio
+        telefonoInput.addEventListener('focus', function() {
+          if (this.value === '' || this.value === '+52') {
+            this.value = '+52 ';
+            // Mover el cursor al final
+            setTimeout(() => {
+              this.setSelectionRange(this.value.length, this.value.length);
+            }, 0);
+          }
+        });
+        
+        telefonoInput.addEventListener('blur', function() {
+          // Si solo tiene +52 o está vacío, mantener +52
+          if (this.value.trim() === '' || this.value.trim() === '+52') {
+            this.value = '+52';
+          } else if (!this.value.startsWith('+52')) {
+            // Si no empieza con +52, agregarlo
+            const numero = this.value.replace(/[^\d]/g, '');
+            this.value = '+52' + (numero ? ' ' + numero : '');
+          }
+        });
+        
+        // Prevenir que el usuario borre el +52
+        telefonoInput.addEventListener('keydown', function(e) {
+          const cursorPos = this.selectionStart;
+          // Si el cursor está antes o dentro de +52 y presiona backspace/delete
+          if (cursorPos <= 3 && (e.key === 'Backspace' || e.key === 'Delete')) {
+            e.preventDefault();
+          }
+        });
+      }
+
       const submitBtn = form.querySelector('button[type="submit"]');
       const formMessage = document.getElementById("formMessage");
 
@@ -1161,12 +1182,23 @@
         console.log("🔍 Debug formulario:");
         console.log("  Teléfono raw:", telefonoRaw);
 
-        // Limpiar el teléfono - enviar solo el número local (sin lada)
-        const telefonoLimpio = telefonoRaw.replace(/[^\d]/g, ""); // Solo números
-        // Enviar solo el número local, sin código de país
-        const telefonoFinal = telefonoLimpio;
+        // Limpiar el teléfono pero mantener el formato con +
+        // Remover espacios, guiones, paréntesis, pero mantener el +
+        let telefonoFinal = telefonoRaw.replace(/[\s\-\(\)\.]/g, '');
         
-        console.log("  Teléfono local enviado:", telefonoFinal);
+        // Asegurar que empiece con +52
+        if (!telefonoFinal.startsWith('+52')) {
+          // Si no empieza con +52, agregarlo
+          if (telefonoFinal.startsWith('+')) {
+            // Si ya tiene otro código, reemplazarlo
+            telefonoFinal = '+52' + telefonoFinal.replace(/^\+?\d{1,3}/, '');
+          } else {
+            // Si no tiene +, agregar +52
+            telefonoFinal = '+52' + telefonoFinal;
+          }
+        }
+        
+        console.log("  Teléfono final enviado:", telefonoFinal);
         console.log("  Longitud del teléfono:", telefonoFinal.length);
 
         // Validación básica en frontend
@@ -1188,12 +1220,14 @@
           return;
         }
 
-        if (!telefonoLimpio || telefonoLimpio.length < 7) {
+        // Validar que el teléfono tenga al menos +52 + 7 dígitos (mínimo 10 caracteres)
+        const telefonoLimpio = telefonoFinal.replace(/[^\d]/g, ""); // Solo números para validar longitud
+        if (!telefonoFinal || telefonoFinal.length < 10 || telefonoLimpio.length < 9) {
           formMessage.style.display = "block";
           formMessage.style.background = "rgba(239, 68, 68, 0.15)";
           formMessage.style.border = "1px solid rgba(239, 68, 68, 0.35)";
           formMessage.style.color = "#ef4444";
-          formMessage.textContent = "Por favor ingresa un teléfono válido.";
+          formMessage.textContent = "Por favor ingresa un teléfono válido completo (ej: +52 55 1234 5678).";
           return;
         }
 

@@ -164,23 +164,34 @@ export default async function handler(req, res) {
 
     // Agregar teléfono si existe
     let phoneLocal = null;
+    let phoneSMS = null;
     if (phone) {
       // Limpiar el teléfono: eliminar espacios, guiones, paréntesis, puntos, etc.
       let phoneCleaned = phone.replace(/[\s\-\(\)\.]/g, '');
       
       // Extraer solo el número local (remover código de país si existe)
       phoneLocal = phoneCleaned;
-      if (phoneLocal.startsWith('+')) {
-        // Remover + y código de país (1-3 dígitos)
+      if (phoneLocal.startsWith('+52')) {
+        // Si ya tiene +52, removerlo para obtener solo el número local
+        phoneLocal = phoneLocal.replace(/^\+52/, '');
+        phoneSMS = phoneCleaned; // Usar el número completo con +52 para SMS
+      } else if (phoneLocal.startsWith('+')) {
+        // Si tiene otro código de país, removerlo
         phoneLocal = phoneLocal.replace(/^\+?\d{1,3}/, '');
+        phoneSMS = '+52' + phoneLocal; // Agregar +52 para SMS
       } else if (phoneLocal.startsWith('00')) {
         // Remover 00 y código de país
         phoneLocal = phoneLocal.replace(/^00\d{1,3}/, '');
+        phoneSMS = '+52' + phoneLocal; // Agregar +52 para SMS
+      } else {
+        // Si no tiene código de país, asumir que es número local
+        phoneSMS = '+52' + phoneLocal; // Agregar +52 para SMS
       }
       
       // Si después de limpiar está vacío o muy corto, usar el original
       if (!phoneLocal || phoneLocal.length < 7) {
-        phoneLocal = phoneCleaned;
+        phoneLocal = phoneCleaned.replace(/^\+52/, '') || phoneCleaned;
+        phoneSMS = phoneCleaned.startsWith('+') ? phoneCleaned : '+52' + phoneCleaned;
       }
       
       // Para TELEFONO (tipo Número): solo números locales (sin código de país)
@@ -188,7 +199,6 @@ export default async function handler(req, res) {
       console.log('📱 Teléfono local agregado a Brevo (TELEFONO):', phoneLocal.substring(0, 6) + '***');
       
       // Para SMS (tipo Texto): formato E.164 completo con +52 (Brevo requiere este formato)
-      const phoneSMS = '+52' + phoneLocal;
       contactData.attributes.SMS = phoneSMS;
       console.log('📱 Teléfono agregado a Brevo (SMS con formato E.164):', phoneSMS.substring(0, 6) + '***');
     } else {
