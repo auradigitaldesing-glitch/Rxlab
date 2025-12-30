@@ -8,6 +8,9 @@ export default async function handler(req, res) {
   }
 
   try {
+    // Log del body completo recibido (para debug)
+    console.log('📥 Body recibido:', JSON.stringify(req.body));
+
     // Obtener y sanitizar datos del body
     const name = (req.body.name || '').trim();
     const email = (req.body.email || '').trim().toLowerCase();
@@ -15,23 +18,36 @@ export default async function handler(req, res) {
     const company = (req.body.company || '').trim();
     const message = (req.body.message || '').trim();
 
+    // Log de datos parseados (seguro, sin exponer datos completos)
+    console.log('📋 Datos parseados:', {
+      name: name ? `${name.substring(0, 15)}... (${name.length} chars)` : 'VACÍO',
+      email: email || 'VACÍO',
+      phone: phone ? `${phone.substring(0, 6)}*** (${phone.length} chars)` : 'VACÍO',
+      company: company ? `${company.substring(0, 15)}...` : 'VACÍO',
+      message: message ? `${message.substring(0, 20)}... (${message.length} chars)` : 'VACÍO'
+    });
+
     // Validaciones básicas
     if (!name || name.length < 2) {
+      console.error('❌ Validación fallida: nombre inválido');
       return res.status(400).json({ error: 'El nombre es requerido y debe tener al menos 2 caracteres' });
     }
 
     if (!email) {
+      console.error('❌ Validación fallida: email vacío');
       return res.status(400).json({ error: 'El email es requerido' });
     }
 
     // Validar formato de email
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
+      console.error('❌ Validación fallida: formato de email inválido');
       return res.status(400).json({ error: 'El formato del email no es válido' });
     }
 
     // Validar teléfono si se proporciona
     if (phone && phone.length < 7) {
+      console.error('❌ Validación fallida: teléfono muy corto');
       return res.status(400).json({ error: 'El teléfono debe tener al menos 7 caracteres' });
     }
 
@@ -44,16 +60,6 @@ export default async function handler(req, res) {
       console.error('❌ BREVO_API_KEY no está configurada en las variables de entorno');
       return res.status(500).json({ error: 'Error de configuración del servidor' });
     }
-
-    // Log seguro (sin mostrar la API key completa)
-    console.log('📥 Datos recibidos:', {
-      name: name.substring(0, 20) + '...',
-      email,
-      phone: phone ? phone.substring(0, 5) + '***' : 'no proporcionado',
-      company: company || 'no proporcionado',
-      listId: BREVO_LIST_ID,
-      apiKeyConfigured: BREVO_API_KEY ? '✅' : '❌'
-    });
 
     // Preparar datos para Brevo
     const contactData = {
@@ -70,13 +76,28 @@ export default async function handler(req, res) {
     if (phone) {
       const phoneFormatted = phone.startsWith('+') ? phone : `+${phone}`;
       contactData.attributes.SMS = phoneFormatted;
-      console.log('📱 Teléfono formateado:', phoneFormatted.substring(0, 6) + '***');
+      console.log('📱 Teléfono agregado a Brevo:', phoneFormatted.substring(0, 6) + '***');
+    } else {
+      console.log('⚠️ No se proporcionó teléfono');
     }
 
     // Agregar empresa si existe
     if (company) {
       contactData.attributes.COMPANY = company;
+      console.log('🏢 Empresa agregada:', company.substring(0, 20) + '...');
     }
+
+    // Log del payload que se enviará a Brevo (sin API key)
+    console.log('📤 Payload para Brevo:', JSON.stringify({
+      email: contactData.email,
+      attributes: {
+        FIRSTNAME: contactData.attributes.FIRSTNAME,
+        LASTNAME: contactData.attributes.LASTNAME,
+        SMS: contactData.attributes.SMS ? contactData.attributes.SMS.substring(0, 6) + '***' : undefined,
+        COMPANY: contactData.attributes.COMPANY
+      },
+      listIds: contactData.listIds
+    }));
 
     // Enviar a Brevo API
     const brevoResponse = await fetch('https://api.brevo.com/v3/contacts', {
@@ -93,6 +114,8 @@ export default async function handler(req, res) {
     let brevoResult;
     const contentType = brevoResponse.headers.get('content-type');
     const responseText = await brevoResponse.text();
+
+    console.log(`📨 Respuesta de Brevo - Status: ${brevoResponse.status}`);
 
     if (contentType && contentType.includes('application/json')) {
       try {
@@ -121,9 +144,8 @@ export default async function handler(req, res) {
 
       // Si es un error de contacto duplicado (email o teléfono), intentar actualizar
       if (brevoResponse.status === 400) {
-        // Caso 1: Email duplicado - con updateEnabled: true debería actualizarse, pero verificamos
+        // Caso 1: Email duplicado - intentar actualizar con PUT
         if (errorCode === 'duplicate_parameter' || errorMessage.toLowerCase().includes('duplicate')) {
-          // Intentar actualizar el contacto existente usando PUT
           console.log('🔄 Contacto duplicado detectado, intentando actualizar...');
           
           try {
@@ -188,7 +210,6 @@ export default async function handler(req, res) {
 
             if (retryResponse.ok) {
               console.log('✅ Contacto creado/actualizado sin teléfono');
-              // Aún retornamos éxito, el teléfono se guardará en otro lado si es necesario
               return res.status(200).json({
                 success: true,
                 message: 'Contacto creado exitosamente (teléfono no pudo ser asociado)',
