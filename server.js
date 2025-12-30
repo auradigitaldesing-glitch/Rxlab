@@ -73,16 +73,29 @@ app.post('/api/brevo', limiter, async (req, res) => {
     // Obtener ID de lista desde variables de entorno (por defecto 4)
     const BREVO_LIST_ID = parseInt(process.env.BREVO_LIST_ID) || 4;
 
-    // Preparar datos para Brevo
+    // Preparar datos para Brevo con atributos correctos
+    // Mapeo: NOMBRE = primera palabra, APELLIDOS = resto
+    const nameParts = name.split(' ');
+    const NOMBRE = nameParts[0] || name;
+    const APELLIDOS = nameParts.slice(1).join(' ') || '';
+
     const contactData = {
       email: email,
       attributes: {
-        FIRSTNAME: name.split(' ')[0] || name,
-        LASTNAME: name.split(' ').slice(1).join(' ') || ''
+        NOMBRE: NOMBRE,
+        APELLIDOS: APELLIDOS
       },
       listIds: [BREVO_LIST_ID],
       updateEnabled: true
     };
+
+    // Agregar empresa si existe (atributo: EMPRESA)
+    if (company) {
+      contactData.attributes.EMPRESA = company;
+      console.log('🏢 Empresa agregada a Brevo:', company);
+    } else {
+      console.log('⚠️ No se proporcionó empresa');
+    }
 
     // Agregar teléfono solo si existe (formato E.164: debe empezar con +)
     // Brevo usa SMS como atributo estándar para teléfono
@@ -152,12 +165,17 @@ app.post('/api/brevo', limiter, async (req, res) => {
         const contactDataWithoutPhone = {
           email: email,
           attributes: {
-            FIRSTNAME: name.split(' ')[0] || name,
-            LASTNAME: name.split(' ').slice(1).join(' ') || ''
+            NOMBRE: NOMBRE,
+            APELLIDOS: APELLIDOS
           },
           listIds: [BREVO_LIST_ID],
           updateEnabled: true
         };
+
+        // Agregar empresa si existe
+        if (company) {
+          contactDataWithoutPhone.attributes.EMPRESA = company;
+        }
 
         const brevoResponseRetry = await fetch('https://api.brevo.com/v3/contacts', {
           method: 'POST',
