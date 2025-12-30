@@ -903,7 +903,7 @@
             <div class="form-field">
               <label for="telefono">Teléfono</label>
               <div style="display: flex; gap: 0.5rem; align-items: stretch;">
-                <select id="lada" name="Lada" required style="width: 120px; flex-shrink: 0;" value="+52">
+                <select id="lada" name="Lada" required style="width: 120px; flex-shrink: 0;">
                   <option value="+52" selected>🇲🇽 +52</option>
                   <option value="+1">🇺🇸 +1</option>
                   <option value="+507">🇵🇦 +507</option>
@@ -1167,8 +1167,25 @@
         const nombre = document.getElementById("nombre")?.value.trim() || "";
         const empresa = document.getElementById("empresa")?.value.trim() || "";
         const email = document.getElementById("email")?.value.trim() || "";
+        
+        // Capturar lada de forma más robusta
         const ladaSelect = document.getElementById("lada");
-        const lada = ladaSelect?.value || ladaSelect?.options[ladaSelect.selectedIndex]?.value || "+52";
+        let lada = "+52"; // Valor por defecto
+        if (ladaSelect) {
+          // Intentar múltiples formas de obtener el valor
+          if (ladaSelect.value) {
+            lada = ladaSelect.value;
+          } else if (ladaSelect.selectedIndex >= 0) {
+            lada = ladaSelect.options[ladaSelect.selectedIndex]?.value || "+52";
+          } else {
+            // Si no hay selección, buscar la opción con selected
+            const selectedOption = ladaSelect.querySelector('option[selected]');
+            if (selectedOption) {
+              lada = selectedOption.value;
+            }
+          }
+        }
+        
         const telefonoRaw = document.getElementById("telefono")?.value.trim() || "";
         const mensaje = document.getElementById("mensaje")?.value.trim() || "";
 
@@ -1176,6 +1193,7 @@
         console.log("🔍 Debug formulario:");
         console.log("  Lada obtenida:", lada);
         console.log("  Teléfono raw:", telefonoRaw);
+        console.log("  LadaSelect value:", ladaSelect?.value);
         console.log("  SelectedIndex:", ladaSelect?.selectedIndex);
         console.log("  Option value:", ladaSelect?.options[ladaSelect?.selectedIndex]?.value);
 
