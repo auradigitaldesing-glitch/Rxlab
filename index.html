@@ -114,16 +114,54 @@
       background-clip:text;-webkit-background-clip:text;color:transparent
     }
     .hero-subtitle{color:var(--text-muted);max-width:540px;font-size:.98rem;line-height:1.6;margin-bottom:1.75rem}
-    .hero-actions{display:flex;flex-wrap:wrap;gap:.75rem 1rem;margin-bottom:1rem}
-    .hero-rating{display:flex;align-items:center;gap:.5rem;margin-bottom:1.5rem}
-    .hero-rating-score{font-weight:700;font-size:1rem;color:#fbbf24}
-    .hero-rating-stars{font-size:1rem;color:#fbbf24;letter-spacing:.1em}
-    .hero-badges{display:flex;flex-wrap:wrap;gap:.6rem;font-size:.78rem;color:var(--text-muted)}
+    .hero-actions{display:flex;flex-wrap:wrap;gap:.75rem 1rem;margin-bottom:1.5rem}
+    .hero-badges{
+      display:flex;
+      flex-wrap:wrap;
+      gap:.6rem;
+      margin-bottom:1.25rem;
+      font-size:.78rem;
+    }
     .hero-badges span{
       background:rgba(15,23,42,.9);
       border-radius:999px;
-      padding:.4rem .75rem;
-      border:1px solid rgba(148,163,184,.4)
+      padding:.5rem 1rem;
+      border:1px solid rgba(148,163,184,.4);
+      color:var(--text-muted);
+      display:inline-flex;
+      align-items:center;
+      gap:.4rem;
+      transition:all .2s ease;
+      box-shadow:0 2px 8px rgba(15,23,42,.4)
+    }
+    .hero-badges span:hover{
+      border-color:rgba(56,189,248,.5);
+      transform:translateY(-1px);
+      box-shadow:0 4px 12px rgba(15,23,42,.6)
+    }
+    .hero-rating{
+      display:flex;
+      align-items:center;
+      gap:.6rem;
+      padding:.6rem 1rem;
+      background:rgba(15,23,42,.6);
+      border-radius:999px;
+      border:1px solid rgba(148,163,184,.25);
+      width:fit-content;
+      backdrop-filter:blur(8px);
+      box-shadow:0 2px 8px rgba(15,23,42,.3)
+    }
+    .hero-rating-score{
+      font-weight:700;
+      font-size:1.05rem;
+      color:#fbbf24;
+      line-height:1
+    }
+    .hero-rating-stars{
+      font-size:1.1rem;
+      color:#fbbf24;
+      letter-spacing:.15em;
+      line-height:1
     }
 
     /* HERO CARD */
@@ -434,6 +472,7 @@
       }
       .hero-actions{justify-content:center}
       .hero-badges{justify-content:center}
+      .hero-rating{margin-left:auto;margin-right:auto}
       .hero-subtitle{margin-left:auto;margin-right:auto}
       .cert-ref-tags{justify-content:center}
       .footer-grid, .footer-bottom-inner{text-align:center}
@@ -495,14 +534,14 @@
             <a href="#servicios-empresas" class="ghost-btn">Ver paquetes empresariales</a>
           </div>
 
-          <div class="hero-rating">
-            <span class="hero-rating-score">4.8</span>
-            <span class="hero-rating-stars">★★★★★</span>
-          </div>
-
           <div class="hero-badges">
             <span>🏥 Clínico y empresarial</span>
             <span>✅ Enfoque en PYMES</span>
+          </div>
+
+          <div class="hero-rating">
+            <span class="hero-rating-score">4.8</span>
+            <span class="hero-rating-stars">★★★★★</span>
           </div>
         </div>
 
