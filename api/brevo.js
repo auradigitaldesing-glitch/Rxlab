@@ -163,52 +163,77 @@ export default async function handler(req, res) {
     }
 
     // Agregar teléfono si existe
-    let phoneLocal = null;
-    let phoneSMS = null;
-    if (phone) {
+    if (phone && phone.trim()) {
+      console.log('📱 Teléfono recibido en backend:', phone);
+      
       // Limpiar el teléfono: eliminar espacios, guiones, paréntesis, puntos, etc.
       let phoneCleaned = phone.replace(/[\s\-\(\)\.]/g, '');
+      console.log('📱 Teléfono limpiado:', phoneCleaned);
       
       // Extraer solo el número local (remover código de país si existe)
-      phoneLocal = phoneCleaned;
+      let phoneLocal = phoneCleaned;
+      let phoneSMS = null;
+      
       if (phoneLocal.startsWith('+52')) {
         // Si ya tiene +52, removerlo para obtener solo el número local
         phoneLocal = phoneLocal.replace(/^\+52/, '');
         phoneSMS = phoneCleaned; // Usar el número completo con +52 para SMS
+        console.log('📱 Teléfono con +52 detectado. Local:', phoneLocal, 'SMS:', phoneSMS);
       } else if (phoneLocal.startsWith('+')) {
         // Si tiene otro código de país, removerlo
         phoneLocal = phoneLocal.replace(/^\+?\d{1,3}/, '');
         phoneSMS = '+52' + phoneLocal; // Agregar +52 para SMS
+        console.log('📱 Teléfono con otro código detectado. Local:', phoneLocal, 'SMS:', phoneSMS);
       } else if (phoneLocal.startsWith('00')) {
         // Remover 00 y código de país
         phoneLocal = phoneLocal.replace(/^00\d{1,3}/, '');
         phoneSMS = '+52' + phoneLocal; // Agregar +52 para SMS
+        console.log('📱 Teléfono con 00 detectado. Local:', phoneLocal, 'SMS:', phoneSMS);
       } else {
         // Si no tiene código de país, asumir que es número local
         phoneSMS = '+52' + phoneLocal; // Agregar +52 para SMS
+        console.log('📱 Teléfono sin código detectado. Local:', phoneLocal, 'SMS:', phoneSMS);
       }
       
-      // Si después de limpiar está vacío o muy corto, usar el original
+      // Validar que phoneLocal tenga al menos 7 dígitos
       if (!phoneLocal || phoneLocal.length < 7) {
-        phoneLocal = phoneCleaned.replace(/^\+52/, '') || phoneCleaned;
+        console.warn('⚠️ Teléfono local muy corto, usando número completo');
+        phoneLocal = phoneCleaned.replace(/^\+52/, '') || phoneCleaned.replace(/^\+/, '');
         phoneSMS = phoneCleaned.startsWith('+') ? phoneCleaned : '+52' + phoneCleaned;
       }
       
+      // Asegurar que phoneSMS tenga el formato correcto
+      if (!phoneSMS || !phoneSMS.startsWith('+52')) {
+        phoneSMS = '+52' + phoneLocal;
+      }
+      
       // Para TELEFONO (tipo Número): solo números locales (sin código de país)
-      contactData.attributes.TELEFONO = parseInt(phoneLocal) || phoneLocal;
-      console.log('📱 Teléfono local agregado a Brevo (TELEFONO):', phoneLocal.substring(0, 6) + '***');
+      const telefonoNumero = parseInt(phoneLocal);
+      if (telefonoNumero && !isNaN(telefonoNumero)) {
+        contactData.attributes.TELEFONO = telefonoNumero;
+      } else {
+        contactData.attributes.TELEFONO = phoneLocal;
+      }
+      console.log('✅ Teléfono local agregado a Brevo (TELEFONO):', phoneLocal.substring(0, Math.min(6, phoneLocal.length)) + '***');
       
       // Para SMS (tipo Texto): formato E.164 completo con +52 (Brevo requiere este formato)
       contactData.attributes.SMS = phoneSMS;
-      console.log('📱 Teléfono agregado a Brevo (SMS con formato E.164):', phoneSMS.substring(0, 6) + '***');
+      console.log('✅ Teléfono agregado a Brevo (SMS con formato E.164):', phoneSMS.substring(0, Math.min(6, phoneSMS.length)) + '***');
     } else {
-      console.log('⚠️ No se proporcionó teléfono');
+      console.log('⚠️ No se proporcionó teléfono o está vacío');
     }
 
-    // Log del payload que se enviará a Brevo (solo keys de atributos)
+    // Log del payload que se enviará a Brevo (con detalles de atributos)
     console.log('📤 Payload final enviado a Brevo:', {
       email: contactData.email,
-      attributes: Object.keys(contactData.attributes),
+      attributes: {
+        keys: Object.keys(contactData.attributes),
+        TELEFONO: contactData.attributes.TELEFONO ? (String(contactData.attributes.TELEFONO).substring(0, 6) + '***') : 'NO DEFINIDO',
+        SMS: contactData.attributes.SMS ? (contactData.attributes.SMS.substring(0, 6) + '***') : 'NO DEFINIDO',
+        NOMBRE: contactData.attributes.NOMBRE,
+        APELLIDOS: contactData.attributes.APELLIDOS,
+        EMPRESA: contactData.attributes.EMPRESA || 'NO DEFINIDO'
+      },
       listIds: contactData.listIds
     });
 
