@@ -163,6 +163,8 @@ export default async function handler(req, res) {
     }
 
     // Agregar teléfono si existe
+    let phoneLocal = null;
+    let phoneSMS = null;
     if (phone && phone.trim()) {
       console.log('📱 Teléfono recibido en backend:', phone);
       
@@ -171,8 +173,7 @@ export default async function handler(req, res) {
       console.log('📱 Teléfono limpiado:', phoneCleaned);
       
       // Extraer solo el número local (remover código de país si existe)
-      let phoneLocal = phoneCleaned;
-      let phoneSMS = null;
+      phoneLocal = phoneCleaned;
       
       if (phoneLocal.startsWith('+52')) {
         // Si ya tiene +52, removerlo para obtener solo el número local
@@ -441,9 +442,11 @@ export default async function handler(req, res) {
 
   } catch (error) {
     console.error('❌ Error en handler:', error);
+    console.error('❌ Stack trace:', error.stack);
     return res.status(500).json({
       ok: false,
-      error: 'Error interno del servidor'
+      error: 'Error interno del servidor',
+      message: process.env.NODE_ENV === 'development' ? error.message : 'Error al procesar la solicitud'
     });
   }
 }
