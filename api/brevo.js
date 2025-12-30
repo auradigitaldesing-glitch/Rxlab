@@ -236,11 +236,21 @@ export default async function handler(req, res) {
 
     // Si es un error de contacto duplicado (email o teléfono), intentar actualizar
     if (brevoResponse.status === 400) {
-      // Caso 1: Email duplicado - intentar actualizar con PUT
-      if (errorCode === 'duplicate_parameter' && 
-          (errorMessage.toLowerCase().includes('email') || 
-           (errorMessage.toLowerCase().includes('contact') && !errorMessage.toLowerCase().includes('sms')))) {
-        console.log('🔄 Contacto duplicado detectado (email), intentando actualizar...');
+      const isEmailDuplicate = errorCode === 'duplicate_parameter' && 
+                               (errorMessage.toLowerCase().includes('email') || 
+                                errorMessage.toLowerCase().includes('contact'));
+      
+      const isSMSDuplicate = errorCode === 'duplicate_parameter' && 
+                             (errorMessage.includes('SMS') || 
+                              errorMessage.includes('phone') || 
+                              errorMessage.includes('teléfono') ||
+                              errorMessage.includes('mobile'));
+
+      let shouldUseBackup = false; // Flag para saber si debemos usar PHONE_BACKUP
+
+      // Caso 1: Intentar actualizar por email primero (esto debería funcionar en la mayoría de casos)
+      if (isEmailDuplicate || isSMSDuplicate) {
+        console.log('🔄 Contacto duplicado detectado, intentando actualizar por email...');
         
         try {
           const updateResponse = await fetch(`https://api.brevo.com/v3/contacts/${encodeURIComponent(email)}`, {
@@ -256,28 +266,55 @@ export default async function handler(req, res) {
           const updateResult = await handleBrevoResponse(updateResponse, email, name, phone, company, message);
           
           if (updateResult.ok) {
+            console.log('✅ Contacto actualizado exitosamente con todos los atributos incluyendo SMS');
             return res.status(200).json({
               ...updateResult,
               data: { email, name, phone, company, message }
             });
           } else {
-            console.error('❌ Error al actualizar contacto:', updateResponse.status);
-            // Continuar con el error original
+            // Si la actualización falla, verificar si es por SMS duplicado
+            const updateErrorText = await updateResponse.text();
+            let updateErrorResult = null;
+            try {
+              updateErrorResult = JSON.parse(updateErrorText);
+            } catch (e) {}
+            
+            const updateErrorMessage = updateErrorResult?.message || '';
+            const isSMSStillDuplicate = updateErrorMessage.includes('SMS') || 
+                                       updateErrorMessage.includes('phone') ||
+                                       updateErrorMessage.includes('teléfono');
+            
+            if (isSMSStillDuplicate && phoneFormatted) {
+              console.log('⚠️ SMS duplicado en otro contacto, guardando en PHONE_BACKUP...');
+              shouldUseBackup = true; // Marcar para usar PHONE_BACKUP
+            } else {
+              console.error('❌ Error al actualizar contacto:', updateResponse.status);
+              return res.status(500).json({
+                ok: false,
+                status: updateResponse.status,
+                code: updateErrorResult?.code,
+                error: updateErrorMessage || 'Error al procesar la solicitud con Brevo'
+              });
+            }
           }
         } catch (updateError) {
           console.error('❌ Error al intentar actualizar:', updateError);
-          // Continuar con el error original
+          // Si hay error al actualizar y es SMS duplicado, usar PHONE_BACKUP
+          if (isSMSDuplicate && phoneFormatted) {
+            console.log('⚠️ Error al actualizar, intentando con PHONE_BACKUP...');
+            shouldUseBackup = true;
+          } else {
+            return res.status(500).json({
+              ok: false,
+              error: 'Error al procesar la solicitud con Brevo'
+            });
+          }
         }
       }
 
-      // Caso 2: Teléfono (SMS) duplicado - guardar en PHONE_BACKUP
-      const isSMSDuplicate = errorCode === 'duplicate_parameter' && 
-                             (errorMessage.includes('SMS') || 
-                              errorMessage.includes('phone') || 
-                              errorMessage.includes('teléfono') ||
-                              errorMessage.includes('mobile'));
-      
-      if (isSMSDuplicate && phoneFormatted) {
+      // Caso 2: Si el SMS está duplicado y no se pudo actualizar, guardar en PHONE_BACKUP
+      // También si el email no existe pero el SMS está duplicado
+      if ((shouldUseBackup || (isSMSDuplicate && !isEmailDuplicate)) && phoneFormatted) {
         console.log('⚠️ SMS duplicado, teléfono guardado como PHONE_BACKUP');
         
         // Crear contacto sin SMS pero con PHONE_BACKUP
