@@ -61,43 +61,43 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: 'Error de configuración del servidor' });
     }
 
-    // Preparar datos para Brevo
+    // Preparar datos para Brevo con atributos reales
+    // Mapeo: NOMBRE = primera palabra, APELLIDOS = resto
+    const nameParts = name.split(' ');
+    const NOMBRE = nameParts[0] || name;
+    const APELLIDOS = nameParts.slice(1).join(' ') || '';
+
     const contactData = {
       email: email,
       attributes: {
-        FIRSTNAME: name.split(' ')[0] || name,
-        LASTNAME: name.split(' ').slice(1).join(' ') || ''
+        NOMBRE: NOMBRE,
+        APELLIDOS: APELLIDOS
       },
       listIds: [BREVO_LIST_ID],
       updateEnabled: true
     };
 
+    // Agregar empresa si existe (atributo: EMPRESA)
+    if (company) {
+      contactData.attributes.EMPRESA = company;
+    }
+
     // Agregar teléfono si existe (formato E.164: debe empezar con +)
+    let phoneFormatted = null;
     if (phone) {
-      const phoneFormatted = phone.startsWith('+') ? phone : `+${phone}`;
+      phoneFormatted = phone.startsWith('+') ? phone : `+${phone}`;
       contactData.attributes.SMS = phoneFormatted;
-      console.log('📱 Teléfono agregado a Brevo:', phoneFormatted.substring(0, 6) + '***');
+      console.log('📱 Teléfono agregado a Brevo (SMS):', phoneFormatted.substring(0, 6) + '***');
     } else {
       console.log('⚠️ No se proporcionó teléfono');
     }
 
-    // Agregar empresa si existe
-    if (company) {
-      contactData.attributes.COMPANY = company;
-      console.log('🏢 Empresa agregada:', company.substring(0, 20) + '...');
-    }
-
-    // Log del payload que se enviará a Brevo (sin API key)
-    console.log('📤 Payload para Brevo:', JSON.stringify({
+    // Log del payload que se enviará a Brevo (solo keys de atributos)
+    console.log('📤 Payload final enviado a Brevo:', {
       email: contactData.email,
-      attributes: {
-        FIRSTNAME: contactData.attributes.FIRSTNAME,
-        LASTNAME: contactData.attributes.LASTNAME,
-        SMS: contactData.attributes.SMS ? contactData.attributes.SMS.substring(0, 6) + '***' : undefined,
-        COMPANY: contactData.attributes.COMPANY
-      },
+      attributes: Object.keys(contactData.attributes),
       listIds: contactData.listIds
-    }));
+    });
 
     // Enviar a Brevo API
     const brevoResponse = await fetch('https://api.brevo.com/v3/contacts', {
@@ -145,8 +145,10 @@ export default async function handler(req, res) {
       // Si es un error de contacto duplicado (email o teléfono), intentar actualizar
       if (brevoResponse.status === 400) {
         // Caso 1: Email duplicado - intentar actualizar con PUT
-        if (errorCode === 'duplicate_parameter' || errorMessage.toLowerCase().includes('duplicate')) {
-          console.log('🔄 Contacto duplicado detectado, intentando actualizar...');
+        if (errorCode === 'duplicate_parameter' && 
+            (errorMessage.toLowerCase().includes('email') || 
+             errorMessage.toLowerCase().includes('contact') && !errorMessage.toLowerCase().includes('sms'))) {
+          console.log('🔄 Contacto duplicado detectado (email), intentando actualizar...');
           
           try {
             const updateResponse = await fetch(`https://api.brevo.com/v3/contacts/${encodeURIComponent(email)}`, {
@@ -160,7 +162,6 @@ export default async function handler(req, res) {
             });
 
             if (updateResponse.ok) {
-              const updateResult = await updateResponse.json();
               console.log('✅ Contacto actualizado exitosamente');
               return res.status(200).json({
                 success: true,
@@ -185,27 +186,34 @@ export default async function handler(req, res) {
                                 errorMessage.includes('teléfono') ||
                                 errorMessage.includes('mobile'));
         
-        if (isSMSDuplicate && phone) {
-          const phoneFormatted = phone.startsWith('+') ? phone : `+${phone}`;
+        if (isSMSDuplicate && phoneFormatted) {
           console.log('⚠️ SMS duplicado, teléfono guardado como PHONE_BACKUP');
           
-          // Crear/actualizar contacto sin SMS pero con PHONE_BACKUP
+          // Crear contacto sin SMS pero con PHONE_BACKUP
           const contactDataWithBackup = {
             email: email,
             attributes: {
-              FIRSTNAME: name.split(' ')[0] || name,
-              LASTNAME: name.split(' ').slice(1).join(' ') || '',
+              NOMBRE: NOMBRE,
+              APELLIDOS: APELLIDOS,
               PHONE_BACKUP: phoneFormatted
             },
             listIds: [BREVO_LIST_ID],
             updateEnabled: true
           };
 
+          // Agregar empresa si existe
           if (company) {
-            contactDataWithBackup.attributes.COMPANY = company;
+            contactDataWithBackup.attributes.EMPRESA = company;
           }
 
+          console.log('📤 Payload con PHONE_BACKUP:', {
+            email: contactDataWithBackup.email,
+            attributes: Object.keys(contactDataWithBackup.attributes),
+            listIds: contactDataWithBackup.listIds
+          });
+
           try {
+            // Intentar crear contacto con PHONE_BACKUP
             const retryResponse = await fetch('https://api.brevo.com/v3/contacts', {
               method: 'POST',
               headers: {
@@ -217,7 +225,7 @@ export default async function handler(req, res) {
             });
 
             if (retryResponse.ok) {
-              console.log('✅ Contacto creado/actualizado con PHONE_BACKUP');
+              console.log('✅ Contacto creado con PHONE_BACKUP');
               return res.status(200).json({
                 success: true,
                 message: 'Contacto creado exitosamente (teléfono guardado como respaldo)',
@@ -267,7 +275,7 @@ export default async function handler(req, res) {
     }
 
     // Éxito - contacto creado
-    console.log('✅ Contacto creado exitosamente en Brevo');
+    console.log('✅ Contacto creado correctamente en Brevo');
     return res.status(200).json({
       success: true,
       message: 'Contacto creado exitosamente',
