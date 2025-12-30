@@ -162,35 +162,34 @@ export default async function handler(req, res) {
       contactData.attributes.EMPRESA = company;
     }
 
-    // Agregar teléfono si existe (formato E.164: debe empezar con +)
-    let phoneFormatted = null;
+    // Agregar teléfono si existe - solo número local (sin código de país)
+    let phoneLocal = null;
     if (phone) {
       // Limpiar el teléfono: eliminar espacios, guiones, paréntesis, puntos, etc.
       let phoneCleaned = phone.replace(/[\s\-\(\)\.]/g, '');
       
-      // Si ya tiene el +, mantenerlo; si no, agregarlo
-      if (!phoneCleaned.startsWith('+')) {
-        // Si empieza con 00 (formato internacional alternativo), reemplazar con +
-        if (phoneCleaned.startsWith('00')) {
-          phoneCleaned = '+' + phoneCleaned.substring(2);
-        } else {
-          phoneCleaned = '+' + phoneCleaned;
-        }
+      // Remover código de país si existe (empieza con + o 00)
+      phoneLocal = phoneCleaned;
+      if (phoneLocal.startsWith('+')) {
+        // Remover + y código de país (1-3 dígitos)
+        phoneLocal = phoneLocal.replace(/^\+?\d{1,3}/, '');
+      } else if (phoneLocal.startsWith('00')) {
+        // Remover 00 y código de país
+        phoneLocal = phoneLocal.replace(/^00\d{1,3}/, '');
       }
       
-      // Validar que tenga al menos 10 caracteres (código de país + número)
-      // Formato E.164: +[código país][número] (mínimo +1234567890 = 11 caracteres)
-      if (phoneCleaned.length >= 11 && phoneCleaned.length <= 16) {
-        phoneFormatted = phoneCleaned;
-        contactData.attributes.SMS = phoneFormatted;
-        console.log('📱 Teléfono formateado y agregado a Brevo (SMS):', phoneFormatted.substring(0, 6) + '*** (longitud: ' + phoneFormatted.length + ')');
-      } else {
-        console.warn('⚠️ Teléfono con formato inválido (longitud incorrecta):', phoneCleaned.substring(0, 10) + '*** (longitud: ' + phoneCleaned.length + ')');
-        // Intentar agregarlo de todos modos, Brevo lo validará
-        phoneFormatted = phoneCleaned;
-        contactData.attributes.SMS = phoneFormatted;
-        console.log('📱 Teléfono agregado a Brevo (SMS) con advertencia:', phoneFormatted.substring(0, 6) + '***');
+      // Si después de limpiar está vacío o muy corto, usar el original
+      if (!phoneLocal || phoneLocal.length < 7) {
+        phoneLocal = phoneCleaned;
       }
+      
+      // Para TELEFONO (tipo Número): solo números locales
+      contactData.attributes.TELEFONO = parseInt(phoneLocal) || phoneLocal;
+      console.log('📱 Teléfono local agregado a Brevo (TELEFONO):', phoneLocal.substring(0, 6) + '***');
+      
+      // Para SMS (tipo Texto): también solo número local (sin +52)
+      contactData.attributes.SMS = phoneLocal;
+      console.log('📱 Teléfono agregado a Brevo (SMS):', phoneLocal.substring(0, 6) + '***');
     } else {
       console.log('⚠️ No se proporcionó teléfono');
     }
@@ -284,7 +283,7 @@ export default async function handler(req, res) {
                                        updateErrorMessage.includes('phone') ||
                                        updateErrorMessage.includes('teléfono');
             
-            if (isSMSStillDuplicate && phoneFormatted) {
+            if (isSMSStillDuplicate && phoneLocal) {
               console.log('⚠️ SMS duplicado en otro contacto, guardando en PHONE_BACKUP...');
               shouldUseBackup = true; // Marcar para usar PHONE_BACKUP
             } else {
@@ -300,7 +299,7 @@ export default async function handler(req, res) {
         } catch (updateError) {
           console.error('❌ Error al intentar actualizar:', updateError);
           // Si hay error al actualizar y es SMS duplicado, usar PHONE_BACKUP
-          if (isSMSDuplicate && phoneFormatted) {
+          if (isSMSDuplicate && phoneLocal) {
             console.log('⚠️ Error al actualizar, intentando con PHONE_BACKUP...');
             shouldUseBackup = true;
           } else {
@@ -314,7 +313,7 @@ export default async function handler(req, res) {
 
       // Caso 2: Si el SMS está duplicado y no se pudo actualizar, guardar en PHONE_BACKUP
       // También si el email no existe pero el SMS está duplicado
-      if ((shouldUseBackup || (isSMSDuplicate && !isEmailDuplicate)) && phoneFormatted) {
+      if ((shouldUseBackup || (isSMSDuplicate && !isEmailDuplicate)) && phoneLocal) {
         console.log('⚠️ SMS duplicado, teléfono guardado como PHONE_BACKUP');
         
         // Crear contacto sin SMS pero con PHONE_BACKUP
@@ -323,7 +322,7 @@ export default async function handler(req, res) {
           attributes: {
             NOMBRE: NOMBRE,
             APELLIDOS: APELLIDOS,
-            PHONE_BACKUP: phoneFormatted
+            PHONE_BACKUP: phoneLocal
           },
           listIds: [BREVO_LIST_ID],
           updateEnabled: true
