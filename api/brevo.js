@@ -178,23 +178,31 @@ export default async function handler(req, res) {
           }
         }
 
-        // Caso 2: Teléfono (SMS) ya asociado a otro contacto
-        if (errorMessage.includes('SMS') || errorMessage.includes('phone') || errorMessage.includes('teléfono')) {
-          console.log('⚠️ Teléfono ya está asociado a otro contacto. Intentando sin teléfono...');
+        // Caso 2: Teléfono (SMS) duplicado - guardar en PHONE_BACKUP
+        const isSMSDuplicate = errorCode === 'duplicate_parameter' && 
+                               (errorMessage.includes('SMS') || 
+                                errorMessage.includes('phone') || 
+                                errorMessage.includes('teléfono') ||
+                                errorMessage.includes('mobile'));
+        
+        if (isSMSDuplicate && phone) {
+          const phoneFormatted = phone.startsWith('+') ? phone : `+${phone}`;
+          console.log('⚠️ SMS duplicado, teléfono guardado como PHONE_BACKUP');
           
-          // Crear/actualizar contacto sin el atributo SMS
-          const contactDataWithoutPhone = {
+          // Crear/actualizar contacto sin SMS pero con PHONE_BACKUP
+          const contactDataWithBackup = {
             email: email,
             attributes: {
               FIRSTNAME: name.split(' ')[0] || name,
-              LASTNAME: name.split(' ').slice(1).join(' ') || ''
+              LASTNAME: name.split(' ').slice(1).join(' ') || '',
+              PHONE_BACKUP: phoneFormatted
             },
             listIds: [BREVO_LIST_ID],
             updateEnabled: true
           };
 
           if (company) {
-            contactDataWithoutPhone.attributes.COMPANY = company;
+            contactDataWithBackup.attributes.COMPANY = company;
           }
 
           try {
@@ -205,22 +213,49 @@ export default async function handler(req, res) {
                 'api-key': BREVO_API_KEY,
                 'content-type': 'application/json'
               },
-              body: JSON.stringify(contactDataWithoutPhone)
+              body: JSON.stringify(contactDataWithBackup)
             });
 
             if (retryResponse.ok) {
-              console.log('✅ Contacto creado/actualizado sin teléfono');
+              console.log('✅ Contacto creado/actualizado con PHONE_BACKUP');
               return res.status(200).json({
                 success: true,
-                message: 'Contacto creado exitosamente (teléfono no pudo ser asociado)',
+                message: 'Contacto creado exitosamente (teléfono guardado como respaldo)',
                 data: { email, name, phone, company, message }
               });
             } else {
+              // Si falla, intentar actualizar el contacto existente con PUT
+              try {
+                const updateResponse = await fetch(`https://api.brevo.com/v3/contacts/${encodeURIComponent(email)}`, {
+                  method: 'PUT',
+                  headers: {
+                    'accept': 'application/json',
+                    'api-key': BREVO_API_KEY,
+                    'content-type': 'application/json'
+                  },
+                  body: JSON.stringify(contactDataWithBackup)
+                });
+
+                if (updateResponse.ok) {
+                  console.log('✅ Contacto actualizado con PHONE_BACKUP');
+                  return res.status(200).json({
+                    success: true,
+                    message: 'Contacto actualizado exitosamente (teléfono guardado como respaldo)',
+                    data: { email, name, phone, company, message }
+                  });
+                } else {
+                  const updateErrorText = await updateResponse.text();
+                  console.error('❌ Error al actualizar con PHONE_BACKUP:', updateResponse.status, updateErrorText.substring(0, 200));
+                }
+              } catch (updateError) {
+                console.error('❌ Error al intentar actualizar con PHONE_BACKUP:', updateError);
+              }
+              
               const retryErrorText = await retryResponse.text();
-              console.error('❌ Error al reintentar sin teléfono:', retryResponse.status, retryErrorText.substring(0, 200));
+              console.error('❌ Error al reintentar con PHONE_BACKUP:', retryResponse.status, retryErrorText.substring(0, 200));
             }
           } catch (retryError) {
-            console.error('❌ Error al reintentar:', retryError);
+            console.error('❌ Error al reintentar con PHONE_BACKUP:', retryError);
           }
         }
       }
