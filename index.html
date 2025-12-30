@@ -1133,7 +1133,7 @@
       // Manejar el campo de teléfono para mantener +52 como prefijo
       const telefonoInput = document.getElementById("telefono");
       if (telefonoInput) {
-        // Asegurar que siempre tenga +52 al inicio
+        // Solo asegurar +52 al hacer focus si está vacío
         telefonoInput.addEventListener('focus', function() {
           if (this.value === '' || this.value === '+52') {
             this.value = '+52 ';
@@ -1144,23 +1144,33 @@
           }
         });
         
+        // Validar y corregir formato al perder el focus (solo si es necesario)
         telefonoInput.addEventListener('blur', function() {
-          // Si solo tiene +52 o está vacío, mantener +52
-          if (this.value.trim() === '' || this.value.trim() === '+52') {
+          const value = this.value.trim();
+          // Si está vacío o solo tiene +52, mantener +52
+          if (value === '' || value === '+52') {
             this.value = '+52';
-          } else if (!this.value.startsWith('+52')) {
-            // Si no empieza con +52, agregarlo
-            const numero = this.value.replace(/[^\d]/g, '');
-            this.value = '+52' + (numero ? ' ' + numero : '');
+          } else if (!value.startsWith('+52')) {
+            // Si no empieza con +52, agregarlo (solo si tiene números)
+            const numero = value.replace(/[^\d]/g, '');
+            if (numero && numero.length >= 7) {
+              this.value = '+52' + numero;
+            }
           }
         });
         
-        // Prevenir que el usuario borre el +52
+        // Prevenir borrar el +52 solo si el cursor está al inicio
         telefonoInput.addEventListener('keydown', function(e) {
           const cursorPos = this.selectionStart;
-          // Si el cursor está antes o dentro de +52 y presiona backspace/delete
-          if (cursorPos <= 3 && (e.key === 'Backspace' || e.key === 'Delete')) {
-            e.preventDefault();
+          const selectionEnd = this.selectionEnd;
+          
+          // Solo prevenir si el usuario intenta borrar el +52 completo
+          if (cursorPos <= 3 && selectionEnd <= 3 && (e.key === 'Backspace' || e.key === 'Delete')) {
+            // Si está intentando borrar el +52, mover el cursor después del +52
+            if (this.value.startsWith('+52')) {
+              e.preventDefault();
+              this.setSelectionRange(3, 3);
+            }
           }
         });
       }
@@ -1175,22 +1185,21 @@
         const nombre = document.getElementById("nombre")?.value.trim() || "";
         const empresa = document.getElementById("empresa")?.value.trim() || "";
         const email = document.getElementById("email")?.value.trim() || "";
-        const telefonoRaw = document.getElementById("telefono")?.value.trim() || "";
+        let telefonoRaw = document.getElementById("telefono")?.value || "";
         const mensaje = document.getElementById("mensaje")?.value.trim() || "";
 
         // Debug: ver qué valores se están obteniendo
         console.log("🔍 Debug formulario:");
-        console.log("  Teléfono raw:", telefonoRaw);
+        console.log("  Teléfono raw (antes de procesar):", telefonoRaw);
 
-        // Limpiar el teléfono pero mantener el formato con +
-        // Remover espacios, guiones, paréntesis, pero mantener el +
+        // Limpiar y procesar el teléfono de forma robusta
+        // Primero, remover espacios, guiones, paréntesis, puntos
         let telefonoFinal = telefonoRaw.replace(/[\s\-\(\)\.]/g, '');
         
         // Asegurar que empiece con +52
         if (!telefonoFinal.startsWith('+52')) {
-          // Si no empieza con +52, agregarlo
           if (telefonoFinal.startsWith('+')) {
-            // Si ya tiene otro código, reemplazarlo
+            // Si tiene otro código de país, reemplazarlo con +52
             telefonoFinal = '+52' + telefonoFinal.replace(/^\+?\d{1,3}/, '');
           } else {
             // Si no tiene +, agregar +52
@@ -1198,8 +1207,15 @@
           }
         }
         
+        // Validar que tenga al menos +52 + 7 dígitos más
+        const soloNumeros = telefonoFinal.replace(/[^\d]/g, '');
+        if (soloNumeros.length < 9) {
+          console.warn("⚠️ Teléfono muy corto después de procesar:", telefonoFinal);
+        }
+        
         console.log("  Teléfono final enviado:", telefonoFinal);
         console.log("  Longitud del teléfono:", telefonoFinal.length);
+        console.log("  Solo números (sin +):", soloNumeros.length);
 
         // Validación básica en frontend
         if (!nombre || nombre.length < 2) {
