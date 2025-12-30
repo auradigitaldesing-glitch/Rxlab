@@ -1122,10 +1122,11 @@
         console.log("  Option value:", ladaSelect?.options[ladaSelect?.selectedIndex]?.value);
 
         // Limpiar el teléfono y combinarlo con la lada
-        const telefonoLimpio = telefonoRaw.replace(/[^\d]/g, "");
+        const telefonoLimpio = telefonoRaw.replace(/[^\d]/g, ""); // Solo números
         const telefonoFinal = `${lada}${telefonoLimpio}`;
         
         console.log("  Teléfono final enviado:", telefonoFinal);
+        console.log("  Longitud del teléfono:", telefonoFinal.length);
 
         // Validación básica en frontend
         if (!nombre || nombre.length < 2) {

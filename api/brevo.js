@@ -102,7 +102,7 @@ export default async function handler(req, res) {
     console.log('📋 Datos parseados:', {
       name: name ? `${name.substring(0, 15)}... (${name.length} chars)` : 'VACÍO',
       email: email || 'VACÍO',
-      phone: phone ? `${phone.substring(0, 6)}*** (${phone.length} chars)` : 'VACÍO',
+      phone: phone ? `${phone.substring(0, 10)}*** (${phone.length} chars)` : 'VACÍO',
       company: company ? `${company.substring(0, 15)}...` : 'VACÍO',
       message: message ? `${message.substring(0, 20)}... (${message.length} chars)` : 'VACÍO'
     });
@@ -165,9 +165,32 @@ export default async function handler(req, res) {
     // Agregar teléfono si existe (formato E.164: debe empezar con +)
     let phoneFormatted = null;
     if (phone) {
-      phoneFormatted = phone.startsWith('+') ? phone : `+${phone}`;
-      contactData.attributes.SMS = phoneFormatted;
-      console.log('📱 Teléfono agregado a Brevo (SMS):', phoneFormatted.substring(0, 6) + '***');
+      // Limpiar el teléfono: eliminar espacios, guiones, paréntesis, puntos, etc.
+      let phoneCleaned = phone.replace(/[\s\-\(\)\.]/g, '');
+      
+      // Si ya tiene el +, mantenerlo; si no, agregarlo
+      if (!phoneCleaned.startsWith('+')) {
+        // Si empieza con 00 (formato internacional alternativo), reemplazar con +
+        if (phoneCleaned.startsWith('00')) {
+          phoneCleaned = '+' + phoneCleaned.substring(2);
+        } else {
+          phoneCleaned = '+' + phoneCleaned;
+        }
+      }
+      
+      // Validar que tenga al menos 10 caracteres (código de país + número)
+      // Formato E.164: +[código país][número] (mínimo +1234567890 = 11 caracteres)
+      if (phoneCleaned.length >= 11 && phoneCleaned.length <= 16) {
+        phoneFormatted = phoneCleaned;
+        contactData.attributes.SMS = phoneFormatted;
+        console.log('📱 Teléfono formateado y agregado a Brevo (SMS):', phoneFormatted.substring(0, 6) + '*** (longitud: ' + phoneFormatted.length + ')');
+      } else {
+        console.warn('⚠️ Teléfono con formato inválido (longitud incorrecta):', phoneCleaned.substring(0, 10) + '*** (longitud: ' + phoneCleaned.length + ')');
+        // Intentar agregarlo de todos modos, Brevo lo validará
+        phoneFormatted = phoneCleaned;
+        contactData.attributes.SMS = phoneFormatted;
+        console.log('📱 Teléfono agregado a Brevo (SMS) con advertencia:', phoneFormatted.substring(0, 6) + '***');
+      }
     } else {
       console.log('⚠️ No se proporcionó teléfono');
     }
