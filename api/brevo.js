@@ -280,7 +280,8 @@ export default async function handler(req, res) {
                              (errorMessage.includes('SMS') || 
                               errorMessage.includes('phone') || 
                               errorMessage.includes('teléfono') ||
-                              errorMessage.includes('mobile'));
+                              errorMessage.includes('mobile') ||
+                              errorMessage.includes('already associated'));
 
       let shouldUseBackup = false; // Flag para saber si debemos usar PHONE_BACKUP
 
@@ -308,17 +309,15 @@ export default async function handler(req, res) {
               data: { email, name, phone, company, message }
             });
           } else {
-            // Si la actualización falla, verificar si es por SMS duplicado
-            const updateErrorText = await updateResponse.text();
-            let updateErrorResult = null;
-            try {
-              updateErrorResult = JSON.parse(updateErrorText);
-            } catch (e) {}
+            // Si la actualización falla, usar el errorResult que ya viene de handleBrevoResponse
+            const updateErrorMessage = updateResult.message || '';
+            const updateErrorCode = updateResult.code;
+            const updateErrorResult = updateResult.errorResult;
             
-            const updateErrorMessage = updateErrorResult?.message || '';
             const isSMSStillDuplicate = updateErrorMessage.includes('SMS') || 
                                        updateErrorMessage.includes('phone') ||
-                                       updateErrorMessage.includes('teléfono');
+                                       updateErrorMessage.includes('teléfono') ||
+                                       updateErrorMessage.includes('mobile');
             
             if (isSMSStillDuplicate && phoneLocal) {
               console.log('⚠️ SMS duplicado en otro contacto, guardando en PHONE_BACKUP...');
@@ -328,7 +327,7 @@ export default async function handler(req, res) {
               return res.status(500).json({
                 ok: false,
                 status: updateResponse.status,
-                code: updateErrorResult?.code,
+                code: updateErrorCode,
                 error: updateErrorMessage || 'Error al procesar la solicitud con Brevo'
               });
             }
