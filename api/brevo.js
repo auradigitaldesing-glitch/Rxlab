@@ -162,13 +162,13 @@ export default async function handler(req, res) {
       contactData.attributes.EMPRESA = company;
     }
 
-    // Agregar teléfono si existe - solo número local (sin código de país)
+    // Agregar teléfono si existe
     let phoneLocal = null;
     if (phone) {
       // Limpiar el teléfono: eliminar espacios, guiones, paréntesis, puntos, etc.
       let phoneCleaned = phone.replace(/[\s\-\(\)\.]/g, '');
       
-      // Remover código de país si existe (empieza con + o 00)
+      // Extraer solo el número local (remover código de país si existe)
       phoneLocal = phoneCleaned;
       if (phoneLocal.startsWith('+')) {
         // Remover + y código de país (1-3 dígitos)
@@ -183,13 +183,14 @@ export default async function handler(req, res) {
         phoneLocal = phoneCleaned;
       }
       
-      // Para TELEFONO (tipo Número): solo números locales
+      // Para TELEFONO (tipo Número): solo números locales (sin código de país)
       contactData.attributes.TELEFONO = parseInt(phoneLocal) || phoneLocal;
       console.log('📱 Teléfono local agregado a Brevo (TELEFONO):', phoneLocal.substring(0, 6) + '***');
       
-      // Para SMS (tipo Texto): también solo número local (sin +52)
-      contactData.attributes.SMS = phoneLocal;
-      console.log('📱 Teléfono agregado a Brevo (SMS):', phoneLocal.substring(0, 6) + '***');
+      // Para SMS (tipo Texto): formato E.164 completo con +52 (Brevo requiere este formato)
+      const phoneSMS = '+52' + phoneLocal;
+      contactData.attributes.SMS = phoneSMS;
+      console.log('📱 Teléfono agregado a Brevo (SMS con formato E.164):', phoneSMS.substring(0, 6) + '***');
     } else {
       console.log('⚠️ No se proporcionó teléfono');
     }
